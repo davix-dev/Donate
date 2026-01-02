@@ -46,7 +46,7 @@ async def fetch_price(client, gp):
         except Exception:
             return None
 
-@app.get("/ping")
+@app.api_route("/ping", methods=["GET", "HEAD"])
 async def ping():
     return "pong"
 
