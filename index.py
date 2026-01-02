@@ -46,6 +46,10 @@ async def fetch_price(client, gp):
         except Exception:
             return None
 
+@app.get("/ping")
+async def ping():
+    return "pong"
+
 @app.get("/get-all-passes")
 async def get_all_passes(userId: str = Query(..., description="The Roblox User ID")):
     if not userId:
