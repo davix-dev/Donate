@@ -7,14 +7,9 @@ import uvicorn
 app = FastAPI()
 
 # ================== CẤU HÌNH ==================
-ROBLOX_COOKIE = os.environ.get("ROBLOX_COOKIE")
-if not ROBLOX_COOKIE:
-    print("WARNING: ROBLOX_COOKIE env variable is not set.")
-
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-    "Cookie": f".ROBLOSECURITY={ROBLOX_COOKIE}"
+    "Accept": "application/json"
 }
 
 # Semaphore để giới hạn concurrency
@@ -28,6 +23,9 @@ async def fetch_game_passes(client, uni):
                 f"https://apis.roblox.com/game-passes/v1/universes/{u_id}/game-passes?passView=Full", 
                 headers=HEADERS
             )
+            if p_res.status_code != 200:
+                return []
+                
             data = p_res.json()
             passes = data.get("gamePasses", [])
             
@@ -51,7 +49,10 @@ async def get_all_passes(userId: str = Query(..., description="The Roblox User I
 
     final_results = []
     
-    async with httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=20, max_connections=100)) as client:
+    async with httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+        timeout=httpx.Timeout(10.0)
+    ) as client:
         try:
             # Bước 1: Lấy danh sách Universe
             res = await client.get(f"https://games.roblox.com/v2/users/{userId}/games?sortOrder=Asc&limit=50", headers=HEADERS)
@@ -61,18 +62,18 @@ async def get_all_passes(userId: str = Query(..., description="The Roblox User I
             data_json = res.json()
             games_data = data_json.get("data", [])
 
-            # Giai đoạn 1: Lấy tất cả gamepass từ các universe (đã bao gồm price)
-            tasks_uni = [fetch_game_passes(client, uni) for uni in games_data]
-            results_uni = await asyncio.gather(*tasks_uni)
-            
-            for passes in results_uni:
+            # Giai đoạn 1: Lấy gamepass từ các universe (dừng khi đủ 10)
+            for uni in games_data:
+                passes = await fetch_game_passes(client, uni)
                 for p in passes:
                     final_results.append(p)
-                    # Giới hạn tối đa 10 game pass
                     if len(final_results) >= 10:
                         break
                 if len(final_results) >= 10:
                     break
+            
+            # Cắt bớt nếu thừa (trường hợp loop trong loop add dư)
+            final_results = final_results[:10]
         
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
